@@ -20,8 +20,7 @@ export default function BlogManagementPage() {
           <p className="text-muted-foreground">Create, edit, and manage your blog content.</p>
         </div>
         <Button asChild>
-          {/* This link would ideally go to a /dashboard/blog/new page or open a modal */}
-          <Link href="#">
+          <Link href="/dashboard/blog/new">
             <PlusCircle className="mr-2 h-4 w-4" /> Create New Post
           </Link>
         </Button>
@@ -58,7 +57,7 @@ export default function BlogManagementPage() {
           )}
         </CardContent>
       </Card>
-      {/* TODO: Implement a proper table (e.g., ShadCN Table) and form with Markdown editor for CRUD operations. */}
+      {/* TODO: Fetch posts from Firestore. Implement a proper table (e.g., ShadCN Table) and form with Markdown editor for CRUD operations. */}
     </div>
   );
 }
