@@ -1,8 +1,8 @@
 // src/app/dashboard/layout.tsx
 "use client";
 
-import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useEffect, useMemo } from 'react';
+import { useRouter, usePathname } from 'next/navigation';
 import { useAuth } from '@/hooks/use-auth';
 import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
 import Link from 'next/link';
@@ -30,6 +30,7 @@ export default function DashboardLayout({
 }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const currentPathname = usePathname();
   const { toast } = useToast();
 
   useEffect(() => {
@@ -58,6 +59,15 @@ export default function DashboardLayout({
     return names[0][0];
   };
 
+  const activeNavItemName = useMemo(() => {
+    if (typeof currentPathname !== 'string') return 'Dashboard';
+    const activeItem = navItems.find(item => {
+        if (typeof item.href !== 'string') return false; // Ensure item.href is a string
+        return currentPathname === item.href || (!item.exact && currentPathname.startsWith(item.href));
+    });
+    return activeItem?.name || 'Dashboard';
+  }, [currentPathname]);
+
   if (loading) {
     return (
       <div className="flex h-screen items-center justify-center">
@@ -72,7 +82,7 @@ export default function DashboardLayout({
   if (!user) {
     // This will be shown briefly before redirection if JS is slow or disabled,
     // but useEffect should handle redirection for most cases.
-    return null; 
+    return null;
   }
 
   return (
@@ -86,19 +96,23 @@ export default function DashboardLayout({
         </SidebarHeader>
         <SidebarContent className="p-2">
           <SidebarMenu>
-            {navItems.map((item) => (
-              <SidebarMenuItem key={item.name}>
-                <Link href={item.href} passHref legacyBehavior>
-                  <SidebarMenuButton 
-                    tooltip={{children: item.name, side: "right", align: "center"}}
-                    isActive={router.pathname === item.href || (!item.exact && router.pathname.startsWith(item.href))}
-                  >
-                    <item.icon />
-                    <span>{item.name}</span>
-                  </SidebarMenuButton>
-                </Link>
-              </SidebarMenuItem>
-            ))}
+            {navItems.map((item) => {
+              const isActive = typeof currentPathname === 'string' && typeof item.href === 'string' &&
+                (currentPathname === item.href || (!item.exact && currentPathname.startsWith(item.href)));
+              return (
+                <SidebarMenuItem key={item.name}>
+                  <Link href={item.href} passHref legacyBehavior>
+                    <SidebarMenuButton
+                      tooltip={{children: item.name, side: "right", align: "center"}}
+                      isActive={isActive}
+                    >
+                      <item.icon />
+                      <span>{item.name}</span>
+                    </SidebarMenuButton>
+                  </Link>
+                </SidebarMenuItem>
+              );
+            })}
           </SidebarMenu>
         </SidebarContent>
         <SidebarFooter className="p-4 border-t border-sidebar-border mt-auto">
@@ -122,7 +136,7 @@ export default function DashboardLayout({
         <header className="sticky top-0 z-10 flex h-14 items-center gap-4 border-b bg-background/80 backdrop-blur-sm px-6 shadow-sm">
           <SidebarTrigger className="md:hidden" />
           <h1 className="text-xl font-semibold text-foreground">
-            {navItems.find(item => router.pathname === item.href || (!item.exact && router.pathname.startsWith(item.href)))?.name || 'Dashboard'}
+            {activeNavItemName}
           </h1>
         </header>
         <div className="p-6">
