@@ -1,7 +1,7 @@
 // src/app/dashboard/blog/new/page.tsx
 "use client";
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useForm, type SubmitHandler } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
@@ -61,7 +61,7 @@ export default function NewBlogPostPage() {
 
   const imageFile = watch("image");
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (imageFile && imageFile.length > 0) {
       const file = imageFile[0];
       const reader = new FileReader();
