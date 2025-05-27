@@ -3,43 +3,39 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Button } from "@/components/ui/button";
 import Image from "next/image";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Loader2 } from "lucide-react";
+import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
+import { db } from "@/lib/firebase";
+import type { Post } from "@/types/blog";
+import { format } from 'date-fns';
 
-// Mock data for blog posts - replace with data from Firestore later
-const mockPosts = [
-  {
-    id: "1",
-    slug: "getting-started-with-nextjs",
-    title: "Getting Started with Next.js 14",
-    excerpt: "A comprehensive guide to kickstart your Next.js 14 projects with the new App Router and Server Components.",
-    imageUrl: "https://placehold.co/600x400.png",
-    dataAiHint: "coding tutorial",
-    author: "Jane Doe",
-    date: "October 26, 2023",
-  },
-  {
-    id: "2",
-    slug: "mastering-tailwind-css",
-    title: "Mastering Tailwind CSS for Modern UIs",
-    excerpt: "Learn advanced Tailwind CSS techniques to build beautiful and responsive user interfaces efficiently.",
-    imageUrl: "https://placehold.co/600x400.png",
-    dataAiHint: "web design",
-    author: "John Smith",
-    date: "November 5, 2023",
-  },
-  {
-    id: "3",
-    slug: "ai-in-web-development",
-    title: "The Rise of AI in Web Development",
-    excerpt: "Exploring how artificial intelligence is transforming the web development landscape, from coding assistants to generative UI.",
-    imageUrl: "https://placehold.co/600x400.png",
-    dataAiHint: "artificial intelligence",
-    author: "Alex Johnson",
-    date: "November 15, 2023",
-  },
-];
+async function getPublishedPosts(): Promise<Post[]> {
+  const postsCol = collection(db, "posts");
+  const q = query(postsCol, where("status", "==", "published"), orderBy("createdAt", "desc"));
+  
+  try {
+    const querySnapshot = await getDocs(q);
+    const posts = querySnapshot.docs.map(doc => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        ...data,
+        // Ensure timestamps are correctly handled if they are not already Timestamps
+        // For getDocs, they usually are. If direct object, might need conversion.
+        createdAt: data.createdAt as Timestamp, 
+        updatedAt: data.updatedAt as Timestamp,
+      } as Post;
+    });
+    return posts;
+  } catch (error) {
+    console.error("Error fetching published posts: ", error);
+    return []; // Return empty array on error
+  }
+}
 
-export default function BlogPage() {
+export default async function BlogPage() {
+  const posts = await getPublishedPosts();
+
   return (
     <div className="space-y-12">
       <section className="text-center py-12 bg-muted/50 rounded-lg shadow-sm">
@@ -49,47 +45,57 @@ export default function BlogPage() {
         </p>
       </section>
 
-      <section className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
-        {mockPosts.map((post) => (
-          <Card key={post.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
-            {post.imageUrl && (
-              <div className="relative h-56 w-full">
-                <Image
-                  src={post.imageUrl}
-                  alt={post.title}
-                  fill
-                  sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                  style={{ objectFit: 'cover' }}
-                  className="rounded-t-lg"
-                  data-ai-hint={post.dataAiHint}
-                />
-              </div>
-            )}
-            <CardHeader>
-              <CardTitle className="text-xl hover:text-primary transition-colors">
-                <Link href={`/blog/${post.slug}`}>
-                  {post.title}
-                </Link>
-              </CardTitle>
-              <CardDescription className="text-sm text-muted-foreground">
-                By {post.author} on {post.date}
-              </CardDescription>
-            </CardHeader>
-            <CardContent className="flex-grow">
-              <p className="text-foreground/90 text-ellipsis overflow-hidden line-clamp-3">
-                {post.excerpt}
-              </p>
-            </CardContent>
-            <CardFooter>
-              <Button asChild variant="link" className="p-0 h-auto text-primary">
-                <Link href={`/blog/${post.slug}`}>
-                  Read More <ArrowRight className="ml-2 h-4 w-4" />
-                </Link>
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </section>
+      {posts.length > 0 ? (
+        <section className="grid md:grid-cols-2 lg:grid-cols-3 gap-8">
+          {posts.map((post) => (
+            <Card key={post.id} className="flex flex-col overflow-hidden shadow-lg hover:shadow-xl transition-shadow duration-300">
+              {post.imageUrl && (
+                <div className="relative h-56 w-full">
+                  <Image
+                    src={post.imageUrl}
+                    alt={post.title}
+                    fill
+                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                    style={{ objectFit: 'cover' }}
+                    className="rounded-t-lg"
+                    data-ai-hint="blog post image" // Generic hint
+                  />
+                </div>
+              )}
+              <CardHeader>
+                <CardTitle className="text-xl hover:text-primary transition-colors">
+                  <Link href={`/blog/${post.slug}`}>
+                    {post.title}
+                  </Link>
+                </CardTitle>
+                <CardDescription className="text-sm text-muted-foreground">
+                  By {post.authorName} on {post.createdAt ? format(post.createdAt.toDate(), 'MMMM d, yyyy') : 'N/A'}
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="flex-grow">
+                <p className="text-foreground/90 text-ellipsis overflow-hidden line-clamp-3">
+                  {/* TODO: Create and use an excerpt if available */}
+                  {post.content.substring(0, 150)}{post.content.length > 150 ? "..." : ""}
+                </p>
+              </CardContent>
+              <CardFooter>
+                <Button asChild variant="link" className="p-0 h-auto text-primary">
+                  <Link href={`/blog/${post.slug}`}>
+                    Read More <ArrowRight className="ml-2 h-4 w-4" />
+                  </Link>
+                </Button>
+              </CardFooter>
+            </Card>
+          ))}
+        </section>
+      ) : (
+        <section className="text-center py-10">
+          <p className="text-muted-foreground text-lg">No blog posts published yet. Check back soon!</p>
+        </section>
+      )}
     </div>
   );
 }
+
+// Optional: Revalidate data (ISR) - example: revalidate every hour
+// export const revalidate = 3600;
