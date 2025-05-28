@@ -1,33 +1,43 @@
 // src/app/(main)/blog/[slug]/page.tsx
-import Image from "next/image";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { CalendarDays } from "lucide-react";
-import ReactMarkdown from 'react-markdown';
-import { notFound } from "next/navigation";
-import { collection, query, where, getDocs, limit, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { blogCollectionId, databaseId, databases, Query } from "@/lib/appwrite";
 import type { Post } from "@/types/blog";
 import { format } from 'date-fns';
+import { CalendarDays } from "lucide-react";
+import Image from "next/image";
+import { notFound } from "next/navigation";
+import ReactMarkdown from 'react-markdown';
 
 
 async function getPostBySlug(slug: string): Promise<Post | null> {
-  const postsCol = collection(db, "posts");
-  // Query for slug and ensure it's published
-  const q = query(postsCol, where("slug", "==", slug), where("status", "==", "published"), limit(1));
-  
   try {
-    const querySnapshot = await getDocs(q);
-    if (querySnapshot.empty) {
+    const response = await databases.listDocuments(
+      databaseId,
+      blogCollectionId,
+      [
+        Query.equal("slug", [slug]),
+        Query.equal("status", ["published"]),
+        Query.limit(1)
+      ]
+    );
+    
+    if (response.documents.length === 0) {
       return null;
     }
-    const doc = querySnapshot.docs[0];
-    const data = doc.data();
+    
+    const doc = response.documents[0];
     return {
-      id: doc.id,
-      ...data,
-      createdAt: data.createdAt as Timestamp,
-      updatedAt: data.updatedAt as Timestamp,
+      id: doc.$id,
+      title: doc.title,
+      content: doc.content,
+      slug: doc.slug,
+      imageUrl: doc.imageUrl,
+      authorName: doc.authorName,
+      authorId: doc.authorId,
+      createdAt: new Date(doc.createdAt),
+      updatedAt: new Date(doc.updatedAt),
+      status: doc.status
     } as Post;
   } catch (error) {
     console.error("Error fetching post by slug: ", error);
@@ -51,7 +61,7 @@ export async function generateMetadata({ params }: { params: { slug: string } })
         description: post.content.substring(0, 160).replace(/\n/g, ' ') + "...",
         images: post.imageUrl ? [{ url: post.imageUrl }] : [],
         type: 'article',
-        publishedTime: post.createdAt.toDate().toISOString(),
+        publishedTime: post.createdAt.toISOString(),
         authors: [post.authorName],
       },
     twitter: {
@@ -65,10 +75,14 @@ export async function generateMetadata({ params }: { params: { slug: string } })
 
 // Optional: Generate static paths if you have a known set of published slugs
 // export async function generateStaticParams() {
-//   const postsCol = collection(db, "posts");
-//   const q = query(postsCol, where("status", "==", "published"));
-//   const querySnapshot = await getDocs(q);
-//   const slugs = querySnapshot.docs.map(doc => ({ slug: doc.data().slug as string }));
+//   const response = await databases.listDocuments(
+//     databaseId,
+//     blogCollectionId,
+//     [
+//       Query.equal("status", ["published"])
+//     ]
+//   );
+//   const slugs = response.documents.map(doc => ({ slug: doc.slug as string }));
 //   return slugs;
 // }
 // export const revalidate = 3600; // Revalidate every hour
@@ -114,8 +128,8 @@ export default async function BlogPostPage({ params }: { params: { slug: string 
           </div>
           <div className="flex items-center space-x-1">
             <CalendarDays className="h-4 w-4" />
-            <time dateTime={post.createdAt.toDate().toISOString()}>
-              {format(post.createdAt.toDate(), 'MMMM d, yyyy')}
+            <time dateTime={post.createdAt.toISOString()}>
+              {format(post.createdAt, 'MMMM d, yyyy')}
             </time>
           </div>
         </div>

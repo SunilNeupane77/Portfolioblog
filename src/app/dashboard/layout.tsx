@@ -1,18 +1,15 @@
 // src/app/dashboard/layout.tsx
 "use client";
 
-import { useEffect, useMemo } from 'react';
-import { useRouter, usePathname } from 'next/navigation';
-import { useAuth } from '@/hooks/use-auth';
-import { SidebarProvider, Sidebar, SidebarHeader, SidebarContent, SidebarMenu, SidebarMenuItem, SidebarMenuButton, SidebarFooter, SidebarTrigger, SidebarInset } from '@/components/ui/sidebar';
-import Link from 'next/link';
-import { LayoutGrid, Newspaper, Edit3, Settings, BarChart3, Zap, LogOut, UserCircle, Lightbulb } from 'lucide-react';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
-import { signOut } from 'firebase/auth';
-import { auth } from '@/lib/firebase';
+import { Sidebar, SidebarContent, SidebarFooter, SidebarHeader, SidebarInset, SidebarMenu, SidebarMenuButton, SidebarMenuItem, SidebarProvider, SidebarTrigger } from '@/components/ui/sidebar';
+import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
-import { Skeleton } from '@/components/ui/skeleton';
+import { Edit3, LayoutGrid, Lightbulb, LogOut, Newspaper, Zap } from 'lucide-react';
+import Link from 'next/link';
+import { usePathname, useRouter } from 'next/navigation';
+import { useEffect, useMemo } from 'react';
 
 const navItems = [
   { name: 'Overview', href: '/dashboard', icon: LayoutGrid, exact: true },
@@ -41,9 +38,14 @@ export default function DashboardLayout({
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
-      toast({ title: "Logged out successfully." });
-      router.push('/login');
+      const authHook = useAuth();
+      const result = await authHook.logout();
+      if (result.success) {
+        toast({ title: "Logged out successfully." });
+        router.push('/login');
+      } else {
+        throw new Error(result.error);
+      }
     } catch (error) {
       console.error("Error signing out: ", error);
       toast({ variant: "destructive", title: "Logout Failed", description: "Could not log out." });
@@ -118,11 +120,10 @@ export default function DashboardLayout({
         <SidebarFooter className="p-4 border-t border-sidebar-border mt-auto">
            <div className="flex items-center gap-3 group-data-[collapsible=icon]:justify-center">
             <Avatar className="h-9 w-9">
-              <AvatarImage src={user.photoURL || undefined} />
-              <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
+              <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
             </Avatar>
             <div className="group-data-[collapsible=icon]:hidden">
-              <p className="text-sm font-medium text-sidebar-foreground">{user.displayName || "User"}</p>
+              <p className="text-sm font-medium text-sidebar-foreground">{user.name || "User"}</p>
               <p className="text-xs text-sidebar-foreground/70">{user.email}</p>
             </div>
           </div>

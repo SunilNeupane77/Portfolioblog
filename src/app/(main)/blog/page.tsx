@@ -1,32 +1,38 @@
 // src/app/(main)/blog/page.tsx
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import Image from "next/image";
-import Link from "next/link";
-import { ArrowRight, Loader2 } from "lucide-react";
-import { collection, query, where, orderBy, getDocs, Timestamp } from "firebase/firestore";
-import { db } from "@/lib/firebase";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { blogCollectionId, databaseId, databases, Query } from "@/lib/appwrite";
 import type { Post } from "@/types/blog";
 import { format } from 'date-fns';
+import { ArrowRight } from "lucide-react";
+import Image from "next/image";
+import Link from "next/link";
 
 async function getPublishedPosts(): Promise<Post[]> {
-  const postsCol = collection(db, "posts");
-  const q = query(postsCol, where("status", "==", "published"), orderBy("createdAt", "desc"));
-  
   try {
-    const querySnapshot = await getDocs(q);
-    const posts = querySnapshot.docs.map(doc => {
-      const data = doc.data();
+    const response = await databases.listDocuments(
+      databaseId,
+      blogCollectionId,
+      [
+        Query.equal("status", ["published"]),
+        Query.orderDesc("createdAt")
+      ]
+    );
+    
+    return response.documents.map(doc => {
       return {
-        id: doc.id,
-        ...data,
-        // Ensure timestamps are correctly handled if they are not already Timestamps
-        // For getDocs, they usually are. If direct object, might need conversion.
-        createdAt: data.createdAt as Timestamp, 
-        updatedAt: data.updatedAt as Timestamp,
+        id: doc.$id,
+        title: doc.title,
+        content: doc.content,
+        slug: doc.slug,
+        imageUrl: doc.imageUrl,
+        authorName: doc.authorName,
+        authorId: doc.authorId,
+        createdAt: new Date(doc.createdAt), 
+        updatedAt: new Date(doc.updatedAt),
+        status: doc.status
       } as Post;
     });
-    return posts;
   } catch (error) {
     console.error("Error fetching published posts: ", error);
     return []; // Return empty array on error
@@ -69,7 +75,7 @@ export default async function BlogPage() {
                   </Link>
                 </CardTitle>
                 <CardDescription className="text-sm text-muted-foreground">
-                  By {post.authorName} on {post.createdAt ? format(post.createdAt.toDate(), 'MMMM d, yyyy') : 'N/A'}
+                  By {post.authorName} on {post.createdAt ? format(post.createdAt, 'MMMM d, yyyy') : 'N/A'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow">

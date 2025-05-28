@@ -1,4 +1,4 @@
-import type {NextConfig} from 'next';
+import type { NextConfig } from 'next';
 
 const nextConfig: NextConfig = {
   /* config options here */
@@ -16,11 +16,12 @@ const nextConfig: NextConfig = {
         port: '',
         pathname: '/**',
       },
+      // Firebase storage reference removed - using Appwrite storage now
       {
         protocol: 'https',
-        hostname: 'firebasestorage.googleapis.com',
+        hostname: 'fra.cloud.appwrite.io',
         port: '',
-        pathname: '/**',
+        pathname: '/v1/**',
       }
     ],
   },

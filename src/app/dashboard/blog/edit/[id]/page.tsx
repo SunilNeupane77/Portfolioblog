@@ -1,25 +1,24 @@
 // src/app/dashboard/blog/edit/[id]/page.tsx
 "use client";
 
-import React, { useState, useEffect } from 'react';
-import { useRouter, useParams } from 'next/navigation';
-import { useForm, type SubmitHandler } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { useToast } from '@/hooks/use-toast';
+import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/use-auth';
-import { storage, db } from '@/lib/firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { doc, getDoc, updateDoc, serverTimestamp, type Timestamp } from 'firebase/firestore';
-import { Loader2, Save, UploadCloud, ArrowLeft } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { blogCollectionId, blogImgBucketId, databaseId, databases, ID, storage } from '@/lib/appwrite';
+import type { Post } from '@/types/blog';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { ArrowLeft, Loader2, Save } from 'lucide-react';
 import Image from 'next/image';
-import type { Post } from '@/types/blog'; // Assuming Post type is defined
+import { useParams, useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { Controller, useForm, type SubmitHandler } from 'react-hook-form';
+import * as z from 'zod';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -55,8 +54,7 @@ export default function EditBlogPostPage() {
   const [existingImageUrl, setExistingImageUrl] = useState<string | null>(null);
   const [originalPost, setOriginalPost] = useState<Post | null>(null);
 
-
-  const { register, handleSubmit, watch, formState: { errors }, reset, control,setValue } = useForm<PostFormInputs>({
+  const { register, handleSubmit, watch, formState: { errors }, reset, control } = useForm<PostFormInputs>({
     resolver: zodResolver(postSchema),
     defaultValues: {
         title: '',
@@ -67,22 +65,40 @@ export default function EditBlogPostPage() {
 
   const imageFile = watch("image");
 
+  // Fetch post data when component mounts
   useEffect(() => {
     if (!postId) return;
+    
     setIsFetchingPost(true);
     const fetchPost = async () => {
       try {
-        const postDocRef = doc(db, "posts", postId);
-        const postSnap = await getDoc(postDocRef);
+        const postData = await databases.getDocument(
+          databaseId,
+          blogCollectionId,
+          postId
+        );
 
-        if (postSnap.exists()) {
-          const postData = postSnap.data() as Post;
-          setOriginalPost(postData);
-          reset({ // Use reset to set all form defaultValues
+        if (postData) {
+          const post = {
+            id: postData.$id,
+            title: postData.title,
+            content: postData.content,
+            slug: postData.slug,
+            imageUrl: postData.imageUrl,
+            authorName: postData.authorName,
+            authorId: postData.authorId,
+            createdAt: new Date(postData.createdAt),
+            updatedAt: new Date(postData.updatedAt),
+            status: postData.status
+          } as Post;
+          
+          setOriginalPost(post);
+          reset({ 
             title: postData.title,
             content: postData.content,
             status: postData.status,
           });
+          
           if (postData.imageUrl) {
             setPreviewImage(postData.imageUrl);
             setExistingImageUrl(postData.imageUrl);
@@ -98,11 +114,12 @@ export default function EditBlogPostPage() {
         setIsFetchingPost(false);
       }
     };
+    
     fetchPost();
   }, [postId, reset, router, toast]);
 
-
-  React.useEffect(() => {
+  // Handle image preview
+  useEffect(() => {
     if (imageFile && imageFile.length > 0) {
       const file = imageFile[0];
       const reader = new FileReader();
@@ -123,52 +140,71 @@ export default function EditBlogPostPage() {
       toast({ variant: "destructive", title: "Error", description: "User not authenticated or post data missing." });
       return;
     }
+    
     setIsLoading(true);
     setUploadProgress(0);
 
     try {
-      let downloadURL = originalPost.imageUrl; // Keep existing image URL by default
+      let imageUrl = originalPost.imageUrl; // Keep existing image URL by default
 
       // If a new image is selected, upload it
       if (data.image && data.image.length > 0) {
         const file = data.image[0];
-        // Note: Slug should ideally not change for existing posts to maintain SEO.
-        // Using original slug for filename if possible, or a unique identifier.
-        const uniqueFileName = `${originalPost.slug}-${Date.now()}-${file.name}`;
-        const storageRef = ref(storage, `blog_images/${uniqueFileName}`);
-        const uploadTask = uploadBytesResumable(storageRef, file);
+        
+        // Create a promise to track upload progress
+        const uploadPromise = new Promise<string>((resolve, reject) => {
+          // Create File ID
+          const fileId = ID.unique();
+          
+          // Upload progress tracking function
+          const trackProgress = (progress: number) => {
+            setUploadProgress(progress);
+          };
 
-        await new Promise<void>((resolve, reject) => {
-            uploadTask.on(
-                'state_changed',
-                (snapshot) => {
-                const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
-                setUploadProgress(progress);
-                },
-                (error) => {
-                console.error("Upload failed:", error);
-                toast({ variant: "destructive", title: "Image Upload Error", description: error.message });
-                reject(error);
-                },
-                async () => {
-                downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-                // TODO: Consider deleting the old image from storage if a new one is uploaded
-                // This requires storing the old image path or deriving it.
-                resolve();
-                }
-            );
+          // Start file upload
+          storage.createFile(
+            blogImgBucketId, 
+            fileId, 
+            file
+          ).then(() => {
+            // Get file view URL
+            const fileUrl = storage.getFileView(blogImgBucketId, fileId);
+            resolve(fileUrl);
+          }).catch(error => {
+            reject(error);
+          });
+
+          // Track progress by checking file status periodically
+          let progress = 0;
+          const progressInterval = setInterval(() => {
+            progress += 5; // Increment by 5%
+            if (progress >= 95) {
+              clearInterval(progressInterval);
+            } else {
+              trackProgress(progress);
+            }
+          }, 300);
         });
+
+        // Wait for the file to upload
+        imageUrl = await uploadPromise;
+        setUploadProgress(100);
       }
 
-      const postDocRef = doc(db, "posts", postId);
-      await updateDoc(postDocRef, {
-        title: data.title,
-        content: data.content,
-        imageUrl: downloadURL, // Updated or existing URL
-        status: data.status,
-        updatedAt: serverTimestamp(),
-        // slug remains unchanged
-      });
+      // Update the blog post document in database
+      await databases.updateDocument(
+        databaseId,
+        blogCollectionId,
+        postId,
+        {
+          title: data.title,
+          content: data.content,
+          imageUrl: imageUrl, // Updated or existing URL
+          status: data.status,
+          updatedAt: new Date().toISOString(),
+          // slug remains unchanged
+        }
+      );
 
       toast({ title: "Blog Post Updated", description: "Your post has been successfully updated." });
       router.push('/dashboard/blog');
@@ -228,23 +264,23 @@ export default function EditBlogPostPage() {
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>
             <Controller
-                name="status"
-                control={control}
-                render={({ field }) => (
-                    <Select
-                    onValueChange={field.onChange}
-                    defaultValue={field.value}
-                    disabled={isLoading}
-                    >
-                    <SelectTrigger className={errors.status ? "border-destructive" : ""}>
-                        <SelectValue placeholder="Select status" />
-                    </SelectTrigger>
-                    <SelectContent>
-                        <SelectItem value="draft">Draft</SelectItem>
-                        <SelectItem value="published">Published</SelectItem>
-                    </SelectContent>
-                    </Select>
-                )}
+              name="status"
+              control={control}
+              render={({ field }) => (
+                <Select
+                  onValueChange={field.onChange}
+                  defaultValue={field.value}
+                  disabled={isLoading}
+                >
+                  <SelectTrigger className={errors.status ? "border-destructive" : ""}>
+                    <SelectValue placeholder="Select status" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="draft">Draft</SelectItem>
+                    <SelectItem value="published">Published</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             />
             {errors.status && <p className="text-sm text-destructive">{errors.status.message}</p>}
           </div>
@@ -269,13 +305,7 @@ export default function EditBlogPostPage() {
           </div>
           
           {isLoading && uploadProgress > 0 && (
-            <div className="space-y-1">
-              <Label>Upload Progress</Label>
-              <div className="w-full bg-muted rounded-full h-2.5">
-                <div className="bg-primary h-2.5 rounded-full" style={{ width: `${uploadProgress}%` }}></div>
-              </div>
-              <p className="text-sm text-muted-foreground">{Math.round(uploadProgress)}% uploaded</p>
-            </div>
+            <ProgressBar progress={uploadProgress} labelText="Upload Progress" />
           )}
 
           <div className="flex space-x-2">

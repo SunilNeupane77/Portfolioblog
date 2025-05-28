@@ -1,11 +1,11 @@
 // src/app/dashboard/page.tsx
 "use client";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useAuth } from "@/hooks/use-auth";
-import Link from "next/link";
 import { Edit3, Lightbulb, Newspaper } from "lucide-react";
+import Link from "next/link";
 
 export default function DashboardOverviewPage() {
   const { user } = useAuth();
@@ -14,7 +14,7 @@ export default function DashboardOverviewPage() {
     <div className="space-y-8">
       <Card className="shadow-lg">
         <CardHeader>
-          <CardTitle className="text-3xl text-primary">Welcome to your Dashboard, {user?.displayName || 'User'}!</CardTitle>
+          <CardTitle className="text-3xl text-primary">Welcome to your Dashboard, {user?.name || 'User'}!</CardTitle>
           <CardDescription className="text-lg">
             Manage your portfolio, blog posts, and enhance your content with AI-powered SEO tools.
           </CardDescription>

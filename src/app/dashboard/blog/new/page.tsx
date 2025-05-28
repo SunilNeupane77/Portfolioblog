@@ -1,23 +1,21 @@
 // src/app/dashboard/blog/new/page.tsx
 "use client";
 
-import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
-import { useForm, type SubmitHandler } from 'react-hook-form';
-import { zodResolver } from '@hookform/resolvers/zod';
-import * as z from 'zod';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/hooks/use-auth';
-import { storage, db } from '@/lib/firebase';
-import { ref, uploadBytesResumable, getDownloadURL } from 'firebase/storage';
-import { collection, addDoc, serverTimestamp } from 'firebase/firestore';
-import { Loader2, PlusCircle, UploadCloud } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
+import { blogCollectionId, blogImgBucketId, databaseId, databases, ID, storage } from '@/lib/appwrite';
+import { zodResolver } from '@hookform/resolvers/zod';
+import { Loader2, PlusCircle } from 'lucide-react';
 import Image from 'next/image';
+import { useRouter } from 'next/navigation';
+import { useEffect, useState } from 'react';
+import { useForm, type SubmitHandler } from 'react-hook-form';
+import * as z from 'zod';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
 const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
@@ -86,41 +84,69 @@ export default function NewBlogPostPage() {
       const file = data.image[0];
       const slug = slugify(data.title);
       const uniqueFileName = `${slug}-${Date.now()}-${file.name}`;
-      const storageRef = ref(storage, `blog_images/${uniqueFileName}`);
-      const uploadTask = uploadBytesResumable(storageRef, file);
 
-      uploadTask.on(
-        'state_changed',
-        (snapshot) => {
-          const progress = (snapshot.bytesTransferred / snapshot.totalBytes) * 100;
+      // Create a promise to track upload progress
+      const uploadPromise = new Promise<string>((resolve, reject) => {
+        // Create File ID
+        const fileId = ID.unique();
+        
+        // Upload progress tracking function
+        const trackProgress = (progress: number) => {
           setUploadProgress(progress);
-        },
-        (error) => {
-          console.error("Upload failed:", error);
-          toast({ variant: "destructive", title: "Upload Error", description: error.message });
-          setIsLoading(false);
-        },
-        async () => {
-          const downloadURL = await getDownloadURL(uploadTask.snapshot.ref);
-          
-          await addDoc(collection(db, 'posts'), {
-            title: data.title,
-            content: data.content,
-            slug: slug,
-            imageUrl: downloadURL,
-            authorName: user.displayName || "Anonymous",
-            authorId: user.uid,
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-            status: "draft", // Default status
-          });
+        };
 
-          toast({ title: "Blog Post Created", description: "Your new post has been saved as a draft." });
-          reset();
-          setPreviewImage(null);
-          router.push('/dashboard/blog'); 
+        // Start file upload
+        storage.createFile(
+          blogImgBucketId, 
+          fileId, 
+          file
+        ).then(() => {
+          // Get file view URL
+          const fileUrl = storage.getFileView(blogImgBucketId, fileId);
+          resolve(fileUrl);
+        }).catch(error => {
+          reject(error);
+        });
+
+        // Track progress by checking file status periodically
+        let progress = 0;
+        const progressInterval = setInterval(() => {
+          progress += 5; // Increment by 5%
+          if (progress >= 95) {
+            clearInterval(progressInterval);
+          } else {
+            trackProgress(progress);
+          }
+        }, 300);
+      });
+
+      // Wait for the file to upload
+      const fileUrl = await uploadPromise;
+      setUploadProgress(100);
+      
+      // Create the blog post document in database
+      const docId = ID.unique();
+      await databases.createDocument(
+        databaseId,
+        blogCollectionId,
+        docId,
+        {
+          title: data.title,
+          content: data.content,
+          slug: slug,
+          imageUrl: fileUrl,
+          authorName: user.name || "Anonymous",
+          authorId: user.$id,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+          status: "draft", // Default status
         }
       );
+
+      toast({ title: "Blog Post Created", description: "Your new post has been saved as a draft." });
+      reset();
+      setPreviewImage(null);
+      router.push('/dashboard/blog'); 
     } catch (error: any) {
       console.error("Error creating post:", error);
       toast({ variant: "destructive", title: "Post Creation Failed", description: error.message });

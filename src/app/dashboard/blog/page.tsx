@@ -1,23 +1,22 @@
 // src/app/dashboard/blog/page.tsx
 "use client";
 
-import { useState, useEffect } from "react";
+import { useAuth } from "@/hooks/use-auth";
+import { blogCollectionId, databaseId, databases, Query } from "@/lib/appwrite";
+import type { Post } from "@/types/blog";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { db, auth } from "@/lib/firebase";
-import { collection, query, orderBy, onSnapshot, doc, deleteDoc, where } from "firebase/firestore";
-import { useAuth } from "@/hooks/use-auth";
-import type { Post } from "@/types/blog";
+import { useEffect, useState } from "react";
 
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "@/components/ui/alert-dialog";
-import { MoreHorizontal, PlusCircle, Trash2, Edit, Loader2, Eye } from "lucide-react";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { useToast } from "@/hooks/use-toast";
 import { format } from 'date-fns';
+import { Edit, Eye, Loader2, MoreHorizontal, PlusCircle, Trash2 } from "lucide-react";
 
 export default function BlogManagementPage() {
   const { user, loading: authLoading } = useAuth();
@@ -39,28 +38,45 @@ export default function BlogManagementPage() {
       return;
     }
 
-    setIsLoading(true);
-    // For now, let's fetch all posts. 
-    // If you want to fetch only posts by the current user:
-    // const q = query(collection(db, "posts"), where("authorId", "==", user.uid), orderBy("createdAt", "desc"));
-    const q = query(collection(db, "posts"), orderBy("createdAt", "desc"));
-    
-    const unsubscribe = onSnapshot(q, (querySnapshot) => {
-      const postsData = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      } as Post));
-      setPosts(postsData);
-      setIsLoading(false);
-      setError(null);
-    }, (err) => {
-      console.error("Error fetching posts:", err);
-      setError("Failed to load posts. Please try again.");
-      setIsLoading(false);
-      toast({ variant: "destructive", title: "Error", description: "Could not fetch blog posts." });
-    });
+    const fetchPosts = async () => {
+      setIsLoading(true);
+      try {
+        // You can filter by current user or fetch all posts
+        const response = await databases.listDocuments(
+          databaseId,
+          blogCollectionId,
+          [
+            // Uncomment to filter by current user
+            // Query.equal("authorId", [user.$id]),
+            Query.orderDesc("createdAt")
+          ]
+        );
+        
+        const postsData = response.documents.map(doc => ({
+          id: doc.$id,
+          title: doc.title,
+          content: doc.content,
+          slug: doc.slug,
+          imageUrl: doc.imageUrl,
+          authorName: doc.authorName,
+          authorId: doc.authorId,
+          createdAt: new Date(doc.createdAt),
+          updatedAt: new Date(doc.updatedAt),
+          status: doc.status
+        } as Post));
 
-    return () => unsubscribe();
+        setPosts(postsData);
+        setError(null);
+      } catch (err: any) {
+        console.error("Error fetching posts:", err);
+        setError("Failed to load posts. Please try again.");
+        toast({ variant: "destructive", title: "Error", description: "Could not fetch blog posts." });
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    fetchPosts();
   }, [user, authLoading, router, toast]);
 
   const handleDeleteClick = (post: Post) => {
@@ -72,7 +88,11 @@ export default function BlogManagementPage() {
     if (!postToDelete) return;
     setIsDeleting(true);
     try {
-      await deleteDoc(doc(db, "posts", postToDelete.id));
+      await databases.deleteDocument(
+        databaseId,
+        blogCollectionId,
+        postToDelete.id
+      );
       toast({ title: "Post Deleted", description: `"${postToDelete.title}" has been deleted.` });
       setPosts(prevPosts => prevPosts.filter(p => p.id !== postToDelete.id));
     } catch (err) {
@@ -85,9 +105,9 @@ export default function BlogManagementPage() {
     }
   };
 
-  const formatDate = (timestamp: any) => {
-    if (!timestamp) return 'N/A';
-    return format(timestamp.toDate(), 'MMM d, yyyy HH:mm');
+  const formatDate = (date: Date) => {
+    if (!date) return 'N/A';
+    return format(date, 'MMM d, yyyy HH:mm');
   };
 
   if (authLoading || isLoading) {

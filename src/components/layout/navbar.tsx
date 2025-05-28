@@ -1,22 +1,20 @@
 // src/components/layout/navbar.tsx
 "use client";
 
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Button } from '@/components/ui/button';
+import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { useAuth } from '@/hooks/use-auth';
+import { BookOpenText, Home, LayoutDashboard, LogIn, LogOut, Zap } from 'lucide-react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpenText, Home, LayoutDashboard, LogIn, LogOut, UserCircle, Zap } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { useAuth } from '@/hooks/use-auth';
-import { auth } from '@/lib/firebase';
-import { signOut } from 'firebase/auth';
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 
 const navItems = [
   { name: 'Home', href: '/', icon: Home },
@@ -29,7 +27,8 @@ export default function Navbar() {
 
   const handleSignOut = async () => {
     try {
-      await signOut(auth);
+      const authHook = useAuth();
+      await authHook.logout();
     } catch (error) {
       console.error("Error signing out: ", error);
       // Handle error (e.g., show a toast notification)
@@ -75,8 +74,7 @@ export default function Navbar() {
                   <DropdownMenuTrigger asChild>
                     <Button variant="ghost" className="relative h-10 w-10 rounded-full">
                       <Avatar className="h-9 w-9">
-                        <AvatarImage src={user.photoURL || undefined} alt={user.displayName || "User"} />
-                        <AvatarFallback>{getInitials(user.displayName)}</AvatarFallback>
+                        <AvatarFallback>{getInitials(user.name)}</AvatarFallback>
                       </Avatar>
                     </Button>
                   </DropdownMenuTrigger>
@@ -84,7 +82,7 @@ export default function Navbar() {
                     <DropdownMenuLabel className="font-normal">
                       <div className="flex flex-col space-y-1">
                         <p className="text-sm font-medium leading-none">
-                          {user.displayName || "User"}
+                          {user.name || "User"}
                         </p>
                         <p className="text-xs leading-none text-muted-foreground">
                           {user.email}
