@@ -1,7 +1,7 @@
 // src/app/(main)/blog/page.tsx
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { blogCollectionId, databaseId, databases, Query } from "@/lib/appwrite";
+import { createServerClient, Query } from "@/lib/appwrite";
 import type { Post } from "@/types/blog";
 import { format } from 'date-fns';
 import { ArrowRight } from "lucide-react";
@@ -10,6 +10,10 @@ import Link from "next/link";
 
 async function getPublishedPosts(): Promise<Post[]> {
   try {
+    // Use server client to avoid authentication issues
+    const { databases, databaseId, blogCollectionId } = createServerClient();
+    
+    // Public query - only return published posts with explicit Query parameters
     const response = await databases.listDocuments(
       databaseId,
       blogCollectionId,
@@ -22,15 +26,15 @@ async function getPublishedPosts(): Promise<Post[]> {
     return response.documents.map(doc => {
       return {
         id: doc.$id,
-        title: doc.title,
-        content: doc.content,
-        slug: doc.slug,
-        imageUrl: doc.imageUrl,
-        authorName: doc.authorName,
-        authorId: doc.authorId,
-        createdAt: new Date(doc.createdAt), 
-        updatedAt: new Date(doc.updatedAt),
-        status: doc.status
+        title: doc.title || "Untitled Post",
+        content: doc.content || "",
+        slug: doc.slug || doc.$id,
+        imageUrl: doc.imageUrl || "",
+        authorName: doc.authorName || "Anonymous",
+        authorId: doc.authorId || "",
+        createdAt: doc.createdAt ? new Date(doc.createdAt) : new Date(), 
+        updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : new Date(),
+        status: doc.status || "published"
       } as Post;
     });
   } catch (error) {
@@ -75,13 +79,18 @@ export default async function BlogPage() {
                   </Link>
                 </CardTitle>
                 <CardDescription className="text-sm text-muted-foreground">
-                  By {post.authorName} on {post.createdAt ? format(post.createdAt, 'MMMM d, yyyy') : 'N/A'}
+                  By {post.authorName || 'Anonymous'} on {post.createdAt ? format(post.createdAt, 'MMMM d, yyyy') : 'N/A'}
                 </CardDescription>
               </CardHeader>
               <CardContent className="flex-grow">
                 <p className="text-foreground/90 text-ellipsis overflow-hidden line-clamp-3">
                   {/* TODO: Create and use an excerpt if available */}
-                  {post.content.substring(0, 150)}{post.content.length > 150 ? "..." : ""}
+                  {post.content ? 
+                    <>
+                      {post.content.substring(0, 150)}{post.content.length > 150 ? "..." : ""}
+                    </> : 
+                    <span className="italic text-muted-foreground">No content available</span>
+                  }
                 </p>
               </CardContent>
               <CardFooter>

@@ -68,6 +68,11 @@ export default function EditBlogPostPage() {
   // Fetch post data when component mounts
   useEffect(() => {
     if (!postId) return;
+    if (!user) {
+      toast({ variant: "destructive", title: "Error", description: "You must be logged in to edit posts." });
+      router.push('/login');
+      return;
+    }
     
     setIsFetchingPost(true);
     const fetchPost = async () => {
@@ -77,6 +82,13 @@ export default function EditBlogPostPage() {
           blogCollectionId,
           postId
         );
+        
+        // Verify that the current user is the author of this post
+        if (postData.authorId !== user.$id) {
+          toast({ variant: "destructive", title: "Authorization Error", description: "You don't have permission to edit this post." });
+          router.push('/dashboard/blog');
+          return;
+        }
 
         if (postData) {
           const post = {
@@ -141,6 +153,13 @@ export default function EditBlogPostPage() {
       return;
     }
     
+    // Check that current user is the author of the post for additional security
+    if (originalPost.authorId !== user.$id) {
+      toast({ variant: "destructive", title: "Authorization Error", description: "You don't have permission to edit this post." });
+      router.push('/dashboard/blog');
+      return;
+    }
+    
     setIsLoading(true);
     setUploadProgress(0);
 
@@ -191,7 +210,15 @@ export default function EditBlogPostPage() {
         setUploadProgress(100);
       }
 
-      // Update the blog post document in database
+      // Import permission helpers
+      const { generateDocPermissions, generateDraftPermissions } = require("@/lib/permissions");
+      
+      // Choose permissions based on status (draft vs published)
+      const permissions = data.status === 'published' 
+        ? generateDocPermissions(user.$id)
+        : generateDraftPermissions(user.$id);
+      
+      // Update the blog post document in database with appropriate permissions
       await databases.updateDocument(
         databaseId,
         blogCollectionId,
@@ -203,7 +230,8 @@ export default function EditBlogPostPage() {
           status: data.status,
           updatedAt: new Date().toISOString(),
           // slug remains unchanged
-        }
+        },
+        permissions // Add permissions to ensure proper access control
       );
 
       toast({ title: "Blog Post Updated", description: "Your post has been successfully updated." });

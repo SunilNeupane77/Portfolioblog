@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { ProgressBar } from '@/components/ui/progress-bar';
 import { Textarea } from '@/components/ui/textarea';
 import { useAuth } from '@/hooks/use-auth';
 import { useToast } from '@/hooks/use-toast';
@@ -47,11 +48,24 @@ function slugify(text: string): string {
 
 export default function NewBlogPostPage() {
   const router = useRouter();
-  const { user } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { toast } = useToast();
   const [isLoading, setIsLoading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [previewImage, setPreviewImage] = useState<string | null>(null);
+
+  // Check if user is logged in
+  useEffect(() => {
+    if (authLoading) return;
+    if (!user) {
+      toast({ 
+        variant: "destructive", 
+        title: "Authentication Required", 
+        description: "You must be logged in to create blog posts." 
+      });
+      router.push('/login');
+    }
+  }, [user, authLoading, router, toast]);
 
   const { register, handleSubmit, watch, formState: { errors }, reset } = useForm<PostFormInputs>({
     resolver: zodResolver(postSchema),
@@ -60,14 +74,23 @@ export default function NewBlogPostPage() {
   const imageFile = watch("image");
 
   useEffect(() => {
-    if (imageFile && imageFile.length > 0) {
-      const file = imageFile[0];
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPreviewImage(reader.result as string);
-      };
-      reader.readAsDataURL(file);
-    } else {
+    try {
+      if (imageFile && imageFile.length > 0) {
+        const file = imageFile[0];
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          setPreviewImage(reader.result as string);
+        };
+        reader.onerror = (error) => {
+          console.error('Error reading file:', error);
+          setPreviewImage(null);
+        };
+        reader.readAsDataURL(file);
+      } else {
+        setPreviewImage(null);
+      }
+    } catch (error) {
+      console.error('Error handling file preview:', error);
       setPreviewImage(null);
     }
   }, [imageFile]);
@@ -83,65 +106,86 @@ export default function NewBlogPostPage() {
     try {
       const file = data.image[0];
       const slug = slugify(data.title);
-      const uniqueFileName = `${slug}-${Date.now()}-${file.name}`;
-
+      const fileId = ID.unique();
+      
       // Create a promise to track upload progress
-      const uploadPromise = new Promise<string>((resolve, reject) => {
-        // Create File ID
-        const fileId = ID.unique();
-        
-        // Upload progress tracking function
-        const trackProgress = (progress: number) => {
+      const uploadFileAndGetUrl = async (): Promise<string> => {
+        try {
+          await storage.createFile(blogImgBucketId, fileId, file);
+          return storage.getFileView(blogImgBucketId, fileId);
+        } catch (error) {
+          console.error("Error uploading file:", error);
+          throw new Error("Failed to upload image");
+        }
+      };
+      
+      // Track progress 
+      let progress = 0;
+      const progressInterval = setInterval(() => {
+        progress += 5; // Increment by 5%
+        if (progress >= 95) {
+          clearInterval(progressInterval);
+        } else {
           setUploadProgress(progress);
-        };
+        }
+      }, 300);
 
-        // Start file upload
-        storage.createFile(
-          blogImgBucketId, 
-          fileId, 
-          file
-        ).then(() => {
-          // Get file view URL
-          const fileUrl = storage.getFileView(blogImgBucketId, fileId);
-          resolve(fileUrl);
-        }).catch(error => {
-          reject(error);
-        });
-
-        // Track progress by checking file status periodically
-        let progress = 0;
-        const progressInterval = setInterval(() => {
-          progress += 5; // Increment by 5%
-          if (progress >= 95) {
-            clearInterval(progressInterval);
-          } else {
-            trackProgress(progress);
-          }
-        }, 300);
-      });
-
-      // Wait for the file to upload
-      const fileUrl = await uploadPromise;
+      // Upload file and get URL
+      const fileUrl = await uploadFileAndGetUrl();
+      clearInterval(progressInterval);
       setUploadProgress(100);
       
       // Create the blog post document in database
       const docId = ID.unique();
-      await databases.createDocument(
-        databaseId,
-        blogCollectionId,
-        docId,
-        {
+      try {
+        // Import the permissions helper
+        const { generateDraftPermissions } = require("@/lib/permissions");
+        
+        // Include timestamp fields as strings from the client side
+        const now = new Date().toISOString();
+        const blogPostData = {
           title: data.title,
           content: data.content,
           slug: slug,
           imageUrl: fileUrl,
           authorName: user.name || "Anonymous",
           authorId: user.$id,
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: now,
+          updatedAt: now,
           status: "draft", // Default status
-        }
-      );
+        };
+        
+        console.log("Creating blog post with data:", blogPostData);
+        
+        // Function to create document with retries
+        const createWithRetry = async (retries = 3, delay = 1000) => {
+          try {
+            // Set proper permissions based on document status
+            const permissions = generateDraftPermissions(user.$id);
+            
+            return await databases.createDocument(
+              databaseId,
+              blogCollectionId,
+              docId,
+              blogPostData,
+              permissions // Add permissions to ensure proper access control
+            );
+          } catch (error: any) {
+            if (retries > 0 && (error.message.includes('timeout') || error.message.includes('network'))) {
+              console.log(`Retrying document creation (${retries} attempts remaining)...`);
+              await new Promise(resolve => setTimeout(resolve, delay));
+              return createWithRetry(retries - 1, delay * 1.5);
+            }
+            throw error;
+          }
+        };
+        
+        await createWithRetry();
+        console.log("Blog post created successfully with ID:", docId);
+      } catch (createDocError: any) {
+        console.error("Error creating blog post document:", createDocError);
+        throw new Error(`Failed to create blog post: ${createDocError.message || 'Unknown error'}`);
+      }
 
       toast({ title: "Blog Post Created", description: "Your new post has been saved as a draft." });
       reset();
@@ -206,13 +250,7 @@ export default function NewBlogPostPage() {
           </div>
           
           {isLoading && uploadProgress > 0 && (
-            <div className="space-y-1">
-              <Label>Upload Progress</Label>
-              <div className="w-full bg-muted rounded-full h-2.5">
-                <div className="bg-primary h-2.5 rounded-full" style={{ width: `${uploadProgress}%` }}></div>
-              </div>
-              <p className="text-sm text-muted-foreground">{Math.round(uploadProgress)}% uploaded</p>
-            </div>
+            <ProgressBar progress={uploadProgress} labelText="Upload Progress" />
           )}
 
 

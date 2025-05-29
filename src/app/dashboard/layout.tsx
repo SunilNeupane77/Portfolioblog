@@ -32,9 +32,14 @@ export default function DashboardLayout({
 
   useEffect(() => {
     if (!loading && !user) {
+      toast({ 
+        title: "Authentication Required", 
+        description: "You must be logged in to access the dashboard.",
+        duration: 3000
+      });
       router.push('/login');
     }
-  }, [user, loading, router]);
+  }, [user, loading, router, toast]);
 
   const handleSignOut = async () => {
     try {

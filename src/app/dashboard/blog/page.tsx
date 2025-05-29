@@ -41,14 +41,16 @@ export default function BlogManagementPage() {
     const fetchPosts = async () => {
       setIsLoading(true);
       try {
-        // You can filter by current user or fetch all posts
+        // Filter by current user to ensure they only see their own posts
+        // This resolves the authorization issues
         const response = await databases.listDocuments(
           databaseId,
           blogCollectionId,
           [
-            // Uncomment to filter by current user
-            // Query.equal("authorId", [user.$id]),
-            Query.orderDesc("createdAt")
+            // Filter by current user to ensure proper authorization
+            Query.equal("authorId", user.$id),
+            // Use a safer sorting approach in case createdAt is missing
+            Query.limit(100) // Default to limit and we'll sort client-side
           ]
         );
         
@@ -60,12 +62,14 @@ export default function BlogManagementPage() {
           imageUrl: doc.imageUrl,
           authorName: doc.authorName,
           authorId: doc.authorId,
-          createdAt: new Date(doc.createdAt),
-          updatedAt: new Date(doc.updatedAt),
-          status: doc.status
+          createdAt: doc.createdAt ? new Date(doc.createdAt) : new Date(),
+          updatedAt: doc.updatedAt ? new Date(doc.updatedAt) : new Date(),
+          status: doc.status || "draft"
         } as Post));
-
-        setPosts(postsData);
+        
+        // Client-side sorting by createdAt (newest first)
+        const sortedPosts = [...postsData].sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        setPosts(sortedPosts);
         setError(null);
       } catch (err: any) {
         console.error("Error fetching posts:", err);

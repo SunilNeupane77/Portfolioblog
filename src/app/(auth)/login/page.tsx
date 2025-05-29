@@ -24,7 +24,8 @@ type LoginFormInputs = z.infer<typeof loginSchema>;
 
 export default function LoginPage() {
   const router = useRouter();
-  const { user, loading: authLoading } = useAuth();
+  const auth = useAuth(); // Store the entire auth object
+  const { user, loading: authLoading } = auth; // Destructure what you need
   const { toast } = useToast();
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -43,7 +44,8 @@ export default function LoginPage() {
     setIsLoading(true);
     setError(null);
     try {
-      const { success, error } = await useAuth().login(data.email, data.password);
+      // Use the auth object we stored at the component level
+      const { success, error } = await auth.login(data.email, data.password);
       
       if (!success) throw new Error(error);
       
